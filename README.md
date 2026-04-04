@@ -1,4 +1,4 @@
-# 🩺 Anemia Detection System
+# 🩺 Anemia Screening System
 
 ## 📌 Overview
 An AI-powered, non-invasive anemia screening system that analyzes **palpebral conjunctiva (inner eyelid) images** along with **user-reported symptoms** to predict anemia risk.
