@@ -78,9 +78,5 @@ Consult a healthcare professional for accurate diagnosis.
 
 
 ## Future Improvements
-Mobile app integration
-Real-time video analysis
-Larger dataset training
-Input such as tongue images also used as it is also an indicator for Anemia.
-Clinical validation
+Mobile app integration, real-time video analysis, training on larger datasets, inputs such as tongue images also used (as it is also an indicator for Anemia) and clinical validation.
 
