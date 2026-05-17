@@ -1,53 +1,33 @@
-#CLEANING MASTER DATASET
-from PIL import Image
 import os
-
-dataset_path = "master_dataset"
-
-removed = 0
-
-for root, dirs, files in os.walk(dataset_path):
-    for file in files:
-
-        if file.lower().endswith((".jpg",".jpeg",".png")):
-
-            path = os.path.join(root,file)
-
-            try:
-                img = Image.open(path)
-                img.verify()
-
-            except:
-                print("Removing corrupted image:", path)
-                os.remove(path)
-                removed += 1
-
-print("Cleaning finished.")
-print("Total removed:", removed)
-
-#CLEANING MASTER DATASET 1
 from PIL import Image
-import os
+import argparse
+import logging
 
-dataset_path = "master_dataset_1"
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-removed = 0
+def clean_dataset(dataset_path):
+    removed = 0
+    for root, dirs, files in os.walk(dataset_path):
+        for file in files:
+            if file.lower().endswith((".jpg", ".jpeg", ".png")):
+                path = os.path.join(root, file)
+                try:
+                    with Image.open(path) as img:
+                        img.verify()
+                except Exception:
+                    logging.info(f"Removing corrupted image: {path}")
+                    os.remove(path)
+                    removed += 1
+    return removed
 
-for root, dirs, files in os.walk(dataset_path):
-    for file in files:
+def main():
+    parser = argparse.ArgumentParser(description="Clean dataset by removing corrupted images.")
+    parser.add_argument("--dataset_path", type=str, required=True, help="Path to the dataset folder.")
+    args = parser.parse_args()
 
-        if file.lower().endswith((".jpg",".jpeg",".png")):
+    total_removed = clean_dataset(args.dataset_path)
+    print(f"Cleaning finished. Total removed: {total_removed}")
 
-            path = os.path.join(root,file)
-
-            try:
-                img = Image.open(path)
-                img.verify()
-
-            except:
-                print("Removing corrupted image:", path)
-                os.remove(path)
-                removed += 1
-
-print("Cleaning finished.")
-print("Total removed:", removed)
+if __name__ == "__main__":
+    main()
