@@ -2,95 +2,27 @@ import os
 import cv2
 import numpy as np
 import random
+import argparse
+import logging
 
-dataset_path = "master_dataset/train"
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-classes = ["anemia", "normal"]
-
-def augment_image(img):
-
-    augmentations = []
-
-    # rotation
-    angle = random.randint(-15, 15)
+def augment_image(img, rotation_range=(-15, 15), zoom_scale=(1.0, 1.2), brightness_shift=(-30, 30)):
+    """
+    Apply augmentation techniques to an image:
+    - Rotation
+    - Horizontal flip
+    - Brightness change
+    - Slight zoom (crop + resize)
+    Returns a list of augmented images.
+    """
     h, w = img.shape[:2]
-    M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1)
-    rotated = cv2.warpAffine(img, M, (w, h))
-
-    # horizontal flip
-    flipped = cv2.flip(img, 1)
-
-    # brightness change
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    brightness = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-
-    # slight zoom
-    scale = random.uniform(1.0, 1.2)
-    resized = cv2.resize(img, None, fx=scale, fy=scale)
-    zh, zw = resized.shape[:2]
-    zoom = resized[0:h, 0:w]
-
-    augmentations.extend([rotated, flipped, brightness, zoom])
-
-    return augmentations
-
-
-for cls in classes:
-
-    folder = os.path.join(dataset_path, cls)
-
-    for img_name in os.listdir(folder):
-
-        if "_aug" in img_name:
-            continue
-
-        img_path = os.path.join(folder, img_name)
-
-        img = cv2.imread(img_path)
-
-        if img is None:
-            continue
-
-        name, ext = os.path.splitext(img_name)
-
-        aug_images = augment_image(img)
-
-        for i, aug in enumerate(aug_images, start=1):
-
-            new_name = f"{name}_aug{i}{ext}"
-
-            save_path = os.path.join(folder, new_name)
-
-            cv2.imwrite(save_path, aug)
-
-print("Train augmentation completed.")
-
-
-
-
-
-
-#AUGMENT TRAIN IMAGES IN MASTER DATASET 1
-
-import os
-import cv2
-import numpy as np
-import random
-
-train_path = "master_dataset_1/train"
-
-classes = ["anemia", "normal"]
-
-def augment_image(img):
-
-    h, w = img.shape[:2]
-
     augmented_images = []
 
     # 1. Rotation
-    angle = random.randint(-12, 12)
-    M = cv2.getRotationMatrix2D((w/2, h/2), angle, 1)
+    angle = random.randint(*rotation_range)
+    M = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1)
     rotated = cv2.warpAffine(img, M, (w, h))
     augmented_images.append(rotated)
 
@@ -98,58 +30,68 @@ def augment_image(img):
     flipped = cv2.flip(img, 1)
     augmented_images.append(flipped)
 
-    # 3. Brightness Change (FIXED)
+    # 3. Brightness Change
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # Convert ONLY V channel to int16
     v = hsv[:, :, 2].astype(np.int16)
-
-    v = v + random.randint(-30, 30)
+    v += random.randint(*brightness_shift)
     v = np.clip(v, 0, 255)
-
     hsv[:, :, 2] = v.astype(np.uint8)
-
     bright = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     augmented_images.append(bright)
 
-    # 4. Slight Zoom
-    crop = img[int(0.05*h):int(0.95*h), int(0.05*w):int(0.95*w)]
+    # 4. Slight Zoom (Crop + Resize)
+    crop_fraction = 0.1  # 10% crop
+    y1, y2 = int(crop_fraction * h), int((1 - crop_fraction) * h)
+    x1, x2 = int(crop_fraction * w), int((1 - crop_fraction) * w)
+    crop = img[y1:y2, x1:x2]
     zoom = cv2.resize(crop, (w, h))
     augmented_images.append(zoom)
 
     return augmented_images
 
-
-for cls in classes:
-
-    folder = os.path.join(train_path, cls)
-
-    for img_name in os.listdir(folder):
-
-        # Skip already augmented images
-        if "_aug" in img_name:
+def process_dataset(dataset_path, classes):
+    """
+    Process the dataset directory:
+    - For each class folder, augment images.
+    - Save augmented images with _aug suffix.
+    """
+    for cls in classes:
+        folder = os.path.join(dataset_path, cls)
+        if not os.path.exists(folder):
+            logging.warning(f"Folder not found: {folder}")
             continue
 
-        if not img_name.lower().endswith((".jpg",".jpeg",".png")):
-            continue
+        for img_name in os.listdir(folder):
+            # Skip already augmented images
+            if "_aug" in img_name:
+                continue
+            # Skip non-image files
+            if not img_name.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
 
-        img_path = os.path.join(folder, img_name)
+            img_path = os.path.join(folder, img_name)
+            img = cv2.imread(img_path)
+            if img is None:
+                logging.warning(f"Failed to read image: {img_path}")
+                continue
 
-        img = cv2.imread(img_path)
+            name, ext = os.path.splitext(img_name)
+            aug_images = augment_image(img)
 
-        if img is None:
-            continue
+            for i, aug in enumerate(aug_images, start=1):
+                new_name = f"{name}_aug{i}{ext}"
+                save_path = os.path.join(folder, new_name)
+                cv2.imwrite(save_path, aug)
+        logging.info(f"Augmentation completed for class '{cls}' in folder '{folder}'.")
 
-        name, ext = os.path.splitext(img_name)
+def main():
+    parser = argparse.ArgumentParser(description="Augment training images for dataset expansion.")
+    parser.add_argument("--dataset_path", type=str, required=True, help="Path to the dataset root directory.")
+    parser.add_argument("--classes", nargs='+', default=["anemia", "normal"], help="List of class folder names.")
+    args = parser.parse_args()
 
-        aug_images = augment_image(img)
+    process_dataset(args.dataset_path, args.classes)
+    logging.info("Dataset augmentation completed successfully.")
 
-        for i, aug in enumerate(aug_images, start=1):
-
-            new_name = f"{name}_aug{i}{ext}"
-
-            save_path = os.path.join(folder, new_name)
-
-            cv2.imwrite(save_path, aug)
-
-print("Train dataset augmentation completed successfully.")
+if __name__ == "__main__":
+    main()
