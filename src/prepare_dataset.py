@@ -2,291 +2,176 @@ import os
 import shutil
 import pandas as pd
 import cv2
-import random
-import numpy as np
+import argparse
+import logging
 
-# Load Excel
-df = pd.read_excel("India.xlsx")
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Paths
-original_path = "dataset anemia"
-new_dataset_path = "processed1_anemia_dataset"
+def load_excel(file_path):
+    return pd.read_excel(file_path)
 
-# Create new folders
-os.makedirs(os.path.join(new_dataset_path, "anemia"), exist_ok=True)
-os.makedirs(os.path.join(new_dataset_path, "normal"), exist_ok=True)
+def create_dirs(path, dirs):
+    for d in dirs:
+        os.makedirs(os.path.join(path, d), exist_ok=True)
 
-# Counters for renaming
-anemia_counter = 1
-normal_counter = 1
+def copy_palpebral_images(df, original_path, new_dataset_path):
+    anemia_counter = 1
+    normal_counter = 1
 
-for index, row in df.iterrows():
+    for _, row in df.iterrows():
+        folder_number = str(int(row["Number"]))
+        hgb = row["Hgb"]
+        gender = row["Gender"]
+        label = "anemia" if (gender == "F" and hgb < 12) or (gender == "M" and hgb < 13) else "normal"
 
-    folder_number = str(int(row["Number"]))
-    hgb = row["Hgb"]
-    gender = row["Gender"]
-
-    # WHO anemia rule
-    if (gender == "F" and hgb < 12) or (gender == "M" and hgb < 13):
-        label = "anemia"
-    else:
-        label = "normal"
-
-    # Search inside India and Italy
-    for country in ["India", "Italy"]:
-
-        patient_folder = os.path.join(original_path, country, folder_number)
-
-        if not os.path.exists(patient_folder):
-            continue
-
-        # Find palpebral image
-        for img in os.listdir(patient_folder):
-
-            if "palpebral" not in img.lower():
+        for country in ["India", "Italy"]:
+            patient_folder = os.path.join(original_path, country, folder_number)
+            if not os.path.exists(patient_folder):
                 continue
 
-            src = os.path.join(patient_folder, img)
+            for img in os.listdir(patient_folder):
+                if "palpebral" not in img.lower():
+                    continue
+                src = os.path.join(patient_folder, img)
+                ext = os.path.splitext(img)[1]
+                if label == "anemia":
+                    new_name = f"kaggle_anemia_{anemia_counter}{ext}"
+                    anemia_counter += 1
+                else:
+                    new_name = f"kaggle_normal_{normal_counter}{ext}"
+                    normal_counter += 1
+                dst = os.path.join(new_dataset_path, label, new_name)
+                shutil.copy(src, dst)
+                break
 
-            # get extension
-            ext = os.path.splitext(img)[1]
-
-            if label == "anemia":
-
-                new_name = f"kaggle_anemia_{anemia_counter}{ext}"
-                anemia_counter += 1
-
-            else:
-
-                new_name = f"kaggle_normal_{normal_counter}{ext}"
-                normal_counter += 1
-
-            dst = os.path.join(new_dataset_path, label, new_name)
-
-            shutil.copy(src, dst)
-
-            # stop after copying the palpebral image
-            break
-
-print("Processed1 Kaggle dataset created successfully.")
-# Original Roboflow dataset
-roboflow_path = "Roboflow anemia detection.folder"
-
-# New merged Roboflow dataset
-output_path = "Roboflow_final_dataset"
-
-# Create folders
-os.makedirs(os.path.join(output_path, "anemia"), exist_ok=True)
-os.makedirs(os.path.join(output_path, "normal"), exist_ok=True)
-
-splits = ["train", "test", "valid"]
-classes = ["anemia", "normal"]
-
-anemia_counter = 1
-normal_counter = 1
-
-for split in splits:
-    for cls in classes:
-
-        source_folder = os.path.join(roboflow_path, split, cls)
-
-        if not os.path.exists(source_folder):
-            continue
-
-        for img in os.listdir(source_folder):
-
-            if not img.lower().endswith((".jpg", ".jpeg", ".png")):
+def merge_datasets(datasets, combined_path, classes):
+    for dataset_path, prefix in datasets:
+        for cls in classes:
+            source_folder = os.path.join(dataset_path, cls)
+            dest_folder = os.path.join(combined_path, cls)
+            os.makedirs(dest_folder, exist_ok=True)
+            if not os.path.exists(source_folder):
                 continue
-
-            src = os.path.join(source_folder, img)
-
-            ext = os.path.splitext(img)[1]
-
-            if cls == "anemia":
-
-                new_name = f"roboflow_anemia_{anemia_counter}{ext}"
-                anemia_counter += 1
-
-            else:
-
-                new_name = f"roboflow_normal_{normal_counter}{ext}"
-                normal_counter += 1
-
-            dst = os.path.join(output_path, cls, new_name)
-
-            shutil.copy(src, dst)
-
-print("Roboflow dataset merged successfully.")
-
-
-# IMAGE AUGMENTATION
-# Source datasets
-kaggle_path = "processed1_anemia_dataset"
-roboflow_path = "Roboflow_final_dataset"
-
-# Output dataset
-output_path = "augmented_images_dataset"
-
-classes = ["anemia", "normal"]
-
-# Create output folders
-for cls in classes:
-    os.makedirs(os.path.join(output_path, cls), exist_ok=True)
-
+            for img in os.listdir(source_folder):
+                if not img.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    continue
+                src = os.path.join(source_folder, img)
+                ext = os.path.splitext(img)[1]
+                new_name = f"{prefix}_{cls}_{os.path.splitext(img)[0]}{ext}"
+                dst = os.path.join(dest_folder, new_name)
+                shutil.copy(src, dst)
 
 def augment_image(img):
-
     aug_images = []
 
-    # 1 Rotation
+    # Rotation
     h, w = img.shape[:2]
     M = cv2.getRotationMatrix2D((w/2, h/2), 10, 1)
     rotated = cv2.warpAffine(img, M, (w, h))
     aug_images.append(rotated)
 
-    # 2 Horizontal flip
+    # Horizontal flip
     flipped = cv2.flip(img, 1)
     aug_images.append(flipped)
 
-    # 3 Brightness adjustment
+    # Brightness adjustment
     bright = cv2.convertScaleAbs(img, alpha=1.1, beta=10)
     aug_images.append(bright)
 
-    # 4 Slight zoom
+    # Slight zoom
     crop = img[int(0.05*h):int(0.95*h), int(0.05*w):int(0.95*w)]
     zoom = cv2.resize(crop, (w, h))
     aug_images.append(zoom)
 
     return aug_images
 
-
-# Counters for naming
-kaggle_counter = {"anemia":1, "normal":1}
-roboflow_counter = {"anemia":1, "normal":1}
-
-
-def process_dataset(dataset_path, prefix, counters):
-
+def process_and_augment(dataset_path, output_path, prefix, counters):
+    classes = ["anemia", "normal"]
     for cls in classes:
-
         folder = os.path.join(dataset_path, cls)
-
         for img_name in os.listdir(folder):
-
-            if not img_name.lower().endswith((".jpg",".jpeg",".png")):
+            if not img_name.lower().endswith(('.jpg', '.jpeg', '.png')):
                 continue
-
             img_path = os.path.join(folder, img_name)
             img = cv2.imread(img_path)
-
             if img is None:
                 continue
-
             augmented = augment_image(img)
-
             for aug in augmented:
-
-                num = counters[cls]
-
-                new_name = f"{prefix}_aug_{cls}_{num}.jpg"
-
+                name_idx = counters[cls]
+                new_name = f"{prefix}_aug_{cls}_{name_idx}.jpg"
                 save_path = os.path.join(output_path, cls, new_name)
-
                 cv2.imwrite(save_path, aug)
-
                 counters[cls] += 1
 
-
-# Process Kaggle images
-process_dataset(kaggle_path, "kaggle", kaggle_counter)
-
-# Process Roboflow images
-process_dataset(roboflow_path, "roboflow", roboflow_counter)
-
-print("Augmentation completed successfully.")
-
-#COMBINING IMAGES FROM ROBOFLOW AND PROCESSED1 BEFORE SPLITTING IN MASTER DATASET
-
-# Source datasets
-dataset1 = "Roboflow_final_dataset"
-dataset2 = "processed1_anemia_dataset"
-
-# Destination dataset
-combined_dataset = "combined_images_dataset"
-
-classes = ["anemia", "normal"]
-
-# Create destination folders
-for cls in classes:
-    os.makedirs(os.path.join(combined_dataset, cls), exist_ok=True)
-
-# Function to copy images
-def copy_images(source_dataset):
-
+def combine_datasets(source_dirs, combined_dir, classes):
+    os.makedirs(combined_dir, exist_ok=True)
     for cls in classes:
+        os.makedirs(os.path.join(combined_dir, cls), exist_ok=True)
 
-        source_folder = os.path.join(source_dataset, cls)
-        dest_folder = os.path.join(combined_dataset, cls)
+    def copy_from_source(source):
+        for cls in classes:
+            src_folder = os.path.join(source, cls)
+            dst_folder = os.path.join(combined_dir, cls)
+            if not os.path.exists(src_folder):
+                continue
+            for img in os.listdir(src_folder):
+                src_path = os.path.join(src_folder, img)
+                dst_path = os.path.join(dst_folder, img)
+                if os.path.isfile(src_path):
+                    shutil.copy(src_path, dst_path)
 
-        if not os.path.exists(source_folder):
+    for src in source_dirs:
+        copy_from_source(src)
+
+def add_kaggle2_images(source_path, combined_path, classes):
+    counters = {cls: 1 for cls in classes}
+    for cls in classes:
+        src_folder = os.path.join(source_path, cls)
+        dst_folder = os.path.join(combined_path, cls)
+        if not os.path.exists(src_folder):
             continue
+        for img in os.listdir(src_folder):
+            if not img.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue
+            src = os.path.join(src_folder, img)
+            ext = os.path.splitext(img)[1]
+            new_name = f"kaggle2_{cls}_{counters[cls]}{ext}"
+            dst = os.path.join(dst_folder, new_name)
+            shutil.copy(src, dst)
+            counters[cls] += 1
 
-        for img in os.listdir(source_folder):
+def main():
+    parser = argparse.ArgumentParser(description="Prepare dataset: organize, augment, merge.")
+    parser.add_argument("--excel_path", default="India.xlsx")
+    parser.add_argument("--original_path", default="dataset anemia")
+    parser.add_argument("--new_dataset_path", default="processed1_anemia_dataset")
+    parser.add_argument("--roboflow_path", default="Roboflow anemia detection.folder")
+    parser.add_argument("--dataset2_path", default="Kaggle dataset 2")
+    parser.add_argument("--combined_path", default="combined_images_dataset")
+    parser.add_argument("--augmented_path", default="augmented_images_dataset")
+    args = parser.parse_args()
 
-            src = os.path.join(source_folder, img)
-            dst = os.path.join(dest_folder, img)
+    # Step 1: Load data and create folders
+    df = load_excel(args.excel_path)
+    create_dirs(args.new_dataset_path, ["anemia", "normal"])
+    copy_palpebral_images(df, args.original_path, args.new_dataset_path)
 
-            if os.path.isfile(src):
-                shutil.copy(src, dst)
+    # Step 2: Merge datasets
+    merge_datasets([
+        (args.roboflow_path, "roboflow"),
+        (args.new_dataset_path, "kaggle")
+    ], args.combined_path, ["anemia", "normal"])
 
-# Copy images from both datasets
-copy_images(dataset1)
-copy_images(dataset2)
+    # Step 3: Augmentation
+    counters = {"anemia": 1, "normal": 1}
+    process_and_augment(args.combined_path, args.augmented_path, "master", counters)
 
-print("Datasets combined successfully.")
+    # Step 4: Add Kaggle Dataset 2
+    add_kaggle2_images(args.dataset2_path, args.combined_path, ["anemia", "normal"])
 
+    logging.info("All steps completed successfully.")
 
-
-#ADDING KAGGLE DATASET 2 IMAGES TO COMBINED IMAGES DATASET
-
-
-# Paths
-dataset2_path = "Kaggle dataset 2"
-combined_path = "combined_images_dataset"
-
-classes = ["anemia", "normal"]
-
-# Counters for renaming
-counters = {
-    "anemia": 1,
-    "normal": 1
-}
-
-for cls in classes:
-
-    source_folder = os.path.join(dataset2_path, cls)
-    dest_folder = os.path.join(combined_path, cls)
-
-    if not os.path.exists(source_folder):
-        print(f"{source_folder} not found, skipping...")
-        continue
-
-    for img_name in os.listdir(source_folder):
-
-        if not img_name.lower().endswith((".jpg", ".jpeg", ".png")):
-            continue
-
-        src = os.path.join(source_folder, img_name)
-
-        ext = os.path.splitext(img_name)[1]
-
-        # New name format
-        new_name = f"kaggle2_{cls}_{counters[cls]}{ext}"
-
-        dst = os.path.join(dest_folder, new_name)
-
-        shutil.copy(src, dst)
-
-        counters[cls] += 1
-
-print("Kaggle Dataset 2 added and renamed successfully.")
+if __name__ == "__main__":
+    main()
